@@ -1,0 +1,73 @@
+Times for (records block_size) = 400000 1
+Execution time of copy (system functions): 0.640000
+Execution time of copy (library functions): 0.020000
+Execution time of sort (system functions): 4.260000
+Execution time of sort (library functions): 3.810000
+
+Times for (records block_size) = 1000000 1
+Execution time of copy (system functions): 1.600000
+Execution time of copy (library functions): 0.020000
+Execution time of sort (system functions): 10.260000
+Execution time of sort (library functions): 8.620000
+
+Times for (records block_size) = 200000 4
+Execution time of copy (system functions): 0.320000
+Execution time of copy (library functions): 0.010000
+Execution time of sort (system functions): 6.040000
+Execution time of sort (library functions): 4.380000
+
+Times for (records block_size) = 1000000 4
+Execution time of copy (system functions): 1.650000
+Execution time of copy (library functions): 0.040000
+Execution time of sort (system functions): 33.990000
+Execution time of sort (library functions): 25.340000
+
+Times for (records block_size) = 200000 512
+Execution time of copy (system functions): 0.360000
+Execution time of copy (library functions): 0.080000
+Execution time of sort (system functions): 6.320000
+Execution time of sort (library functions): 5.140000
+
+Times for (records block_size) = 1000000 512
+Execution time of copy (system functions): 1.750000
+Execution time of copy (library functions): 0.410000
+Execution time of sort (system functions): 37.110000
+Execution time of sort (library functions): 30.040000
+
+Times for (records block_size) = 100000 1024
+Execution time of copy (system functions): 0.190000
+Execution time of copy (library functions): 0.080000
+Execution time of sort (system functions): 2.770000
+Execution time of sort (library functions): 2.430000
+
+Times for (records block_size) = 600000 1024
+Execution time of copy (system functions): 1.140000
+Execution time of copy (library functions): 0.480000
+Execution time of sort (system functions): 21.080000
+Execution time of sort (library functions): 17.560000
+
+Times for (records block_size) = 100000 4096
+Execution time of copy (system functions): 0.270000
+Execution time of copy (library functions): 0.290000
+Execution time of sort (system functions): 2.990000
+Execution time of sort (library functions): 2.790000
+
+Times for (records block_size) = 400000 4096
+Execution time of copy (system functions): 1.530000
+Execution time of copy (library functions): 1.140000
+Execution time of sort (system functions): 14.070000
+Execution time of sort (library functions): 13.440000
+
+Times for (records block_size) = 100000 8192
+Execution time of copy (system functions): 0.430000
+Execution time of copy (library functions): 0.540000
+Execution time of sort (system functions): 3.280000
+Execution time of sort (library functions): 3.070000
+
+Times for (records block_size) = 300000 8192
+Execution time of copy (system functions): 5.070000
+Execution time of copy (library functions): 2.230000
+Execution time of sort (system functions): 14.150000
+Execution time of sort (library functions): 12.950000
+
+Widzimy, ze funkcje biblioteczne daja duzo lepsze rezultaty, niz bezposrednie uzywanie funkcji systemowych. Moze byc to spowodowane faktem, iz funkcje biblioteczne optymalizuja pobieranie danych z pliku, przez co rzadziej musza uzywac wywolan systemowych.

@@ -1,0 +1,3 @@
+Ciekawym faktem do zobserwowania jest użytkownik, który wysyła sygnały.
+Wysyłając sygnał z innego terminala użytkownikiem wysyłającym jest faktyczny użytkownik używający tego terminala.
+Jednak jeżeli sygnał wyślemy przy pomocy skrótu klawiaturowego otrzymamy informację, że sygnał wysłał użytkownik root.

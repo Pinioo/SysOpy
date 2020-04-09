@@ -1,0 +1,29 @@
+Handler dla sygnału ustawiony w rodzicu:
+-ustawiony w rodzicu
+-ustawiony w dziecku
+-nieustawiony po wykonaniu funkcji exec
+
+Ignorowanie sygnału ustawione w rodzicu:
+-ignorowanie w rodzibu
+-ignorowanie w dziecku
+-ignorowanie po wykonaniu funkcji exec
+
+Maska sygnału ustawiona w rodzicu:
+-ustawiona w rodzicu
+-ustawiona w dziecku
+-ustawiona po wykonaniu funkcji exec
+
+Maska ustawiona w rodzicu oraz sygnał wysłany do siebie przez rodzica przed wykonaniem fork() i exec():
+-sygnał oczekuje w rodzicu
+-sygnał nie oczekuje w dziecku
+-sygnał oczekuje po wykonaniu funkcji exec
+
+Wyniki ostatniego eksperymentu mogą być nieoczywiste, jednak trzeba zauważyć, że funkcja raise wysyła sygnał do procesu, który ją wywoła [kill(getpid(), SIGNAL)].
+Wywołanie funkcji fork tworzy proces, który ma taki sam ciąg instrukcji i zestaw danych jak rodzic, jednak w systemie jest to zupełnie inny proces, o innym PID.
+Wywołanie funkcji exec nie tworzy nowego procesu, a zamienia zestaw instrukcji aktualnego procesu.
+Wykonujący się po wywołaniu exec program ma takie samo PID jak proces który wysłał do siebie sygnał.
+
+Dla ustawionego handlera sygnału jest on dziedziczony przez dziecko, lecz usunięty po wykonaniu exec.
+Dziecko kopiując dane przodka operuje na takich samych danych, przez co może wykonywać te same funkcje.
+Po wykonaniu exec handler zostaje zresetowany (najprawdopodobniej nie byłby on w ogóle możliwy do wywołania).
+Poza tym exec nie dziedziczy zestawu instrukcji, więc kłóciłoby się to z logiką jego działania. 

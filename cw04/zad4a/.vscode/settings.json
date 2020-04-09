@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "time.h": "c",
+        "stdio.h": "c"
+    },
+    "files.exclude": {
+        "**/.classpath": true,
+        "**/.project": true,
+        "**/.settings": true,
+        "**/.factorypath": true
+    }
+}
