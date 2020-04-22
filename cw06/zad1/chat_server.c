@@ -19,47 +19,52 @@ key_t mqServerKey;
 
 void createServerMq();
 void handleMsg(struct ping_msg msg);
-void connectNewClient(int mqID);
+void connectNewClient(key_t mqID);
+void listForClient(int clientID);
 
 int main(int argc, char** argv){
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+        mqClientsID[i] = -1;
     createServerMq();
     struct ping_msg msg;
-    if(msgrcv(mqServerID, &msg, MAX_MSG, INIT, 0) == -1){
-        switch (errno)
-        {
-        case EACCES:
-            puts("1");
-            break;
-        case EAGAIN:
-            puts("2");
-            break;
+    while(!serverStopped){
+        if(msgrcv(mqServerID, &msg, MAX_MSG, 0, 0) == -1){
+            switch (errno)
+            {
+            case EACCES:
+                puts("1");
+                break;
+            case EAGAIN:
+                puts("2");
+                break;
 
-        case EFAULT:
-            puts("3");
-            break;
+            case EFAULT:
+                puts("3");
+                break;
 
-        case EIDRM:
-            puts("4");
-            break;
+            case EIDRM:
+                puts("4");
+                break;
 
-        case EINTR:
-            puts("5");
-            break;
+            case EINTR:
+                puts("5");
+                break;
 
-        case EINVAL:
-            puts("6");
-            break;
+            case EINVAL:
+                puts("6");
+                break;
 
-        case ENOMEM:
-            puts("7");
-            break;
-        default:
-            puts("None");
-            break;
+            case ENOMEM:
+                puts("7");
+                break;
+            default:
+                puts("None");
+                break;
+            }
         }
-    }
-    else{
-        handleMsg(msg);
+        else{
+            handleMsg(msg);
+        }
     }
     return 0;
 }
@@ -75,32 +80,6 @@ void createServerMq(){
 
         // TODO: errno handle
         mqServerID = msgget(mqServerKey, IPC_CREAT | S_IRWXU);
-        switch (errno)
-        {
-        case EACCES:
-            puts("1");
-            break;
-        case EEXIST:
-            puts("2");
-            break;
-
-        case ENOENT:
-            puts("3");
-            break;
-
-        case ENOMEM:
-            puts("4");
-            break;
-
-        case ENOSPC:
-            puts("5");
-            break;
-
-        default:
-            puts("None");
-            break;
-        }
-        printf("%d\n", mqServerID);
     }while(0);
     printf("Chat server key: %d\n", mqServerKey);
 }
@@ -114,12 +93,26 @@ void connectNewClient(key_t mqID){
         puts("Sending message back to client failed");
     }
     else{
-        msgsnd(mqClientsID[clientID], &msg, MAX_MSG, 0);
+        msgsnd(mqClientsID[clientID], &msg, sizeof(int), 0);
         connectedClients++;
     }
 }
 
+void listForClient(int clientID){
+    for(int i = 0; i < MAX_CLIENTS; ++i){
+        if(mqClientsID[i] != -1){
+            printf("ID: %d\tStatus: ACTIVE\n", i);
+        }
+    }
+}
+
 void handleMsg(struct ping_msg msg){
-    if(msg.mtype == INIT)
-        connectNewClient(((struct clientkey_msg*)&msg)->clientKey);
+    switch(msg.mtype){ 
+        case INIT:
+            connectNewClient(((struct clientkey_msg*)&msg)->clientKey); break;
+        case LIST:
+            listForClient(((struct clientid_msg*)&msg)->clientID); break;
+        default:
+            puts("lolz"); break;
+    }
 }
