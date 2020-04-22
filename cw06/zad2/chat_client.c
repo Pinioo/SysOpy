@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <sys/msg.h>
-#include <sys/ipc.h>
+#include <mqueue.h>
 #include <sys/errno.h>
 #include <sys/types.h>
 #include <sys/signal.h>
@@ -16,13 +15,15 @@
 // COMMANDS: LIST | STOP | CHECK | DISCONNECT | CONNECT (ID) | SEND (MESSAGE) //
 ////////////////////////////////////////////////////////////////////////////////
 
-key_t mqPrivateKey;
-key_t mqServerKey;
 
-int mqPrivateID;
-int mqServerID;
+mqd_t mqPrivateID;
+mqd_t mqServerID;
+mqd_t mqPrivateChatID;
 
-int mqPrivateChatID;
+struct mq_attr attr = {.mq_maxmsg = MAX_MSGS_IN, .mq_msgsize = MAX_MSG, .mq_flags = 0};
+struct mq_attr nonBlockAttr = {.mq_maxmsg = MAX_MSGS_IN, .mq_msgsize = MAX_MSG, .mq_flags = O_NONBLOCK};
+
+char mqPrivateName[MQ_NAME_LEN + 1];
 
 int clientID;
 int privateChatID = -1;
@@ -39,7 +40,7 @@ void disconnectResponseHandler();
 void sigintHandler(){
     exit(0);
 }
-void handleMessage(struct ping_msg);
+void handleMessage(char*);
 
 int main(int argc, char** argv){
     srand(time(NULL));
@@ -49,15 +50,18 @@ int main(int argc, char** argv){
     openQueue();
     if(connectToServer() == -1){
         puts("Couldn't connect to server");
-        msgctl(mqPrivateID, IPC_RMID, NULL);
+        mq_close(mqPrivateID);
+        mq_unlink(mqPrivateName);
         exit(-1);
     }
     else{
         char* command = (char*)malloc(MAX_MSG*sizeof(char));
         while(1){
             // First, check my queue
-            struct ping_msg recveivedData;
-            int msgGot = msgrcv(mqPrivateID, &recveivedData, MAX_MSG, 0, IPC_NOWAIT);
+            char recveivedData[MAX_MSG];
+            mq_setattr(mqPrivateID, &nonBlockAttr, NULL);
+            int msgGot = mq_receive(mqPrivateID, recveivedData, MAX_MSG, NULL);
+            mq_setattr(mqPrivateID, &attr, NULL);
             if(msgGot != -1){
                 handleMessage(recveivedData);
             }
@@ -91,24 +95,28 @@ int main(int argc, char** argv){
 
 // BASIC ACTIONS TAKEN BY PROGRAM
 void openQueue(){
-    char* homePath = getenv("HOME");
+    mqPrivateName[0] = '/';
+    mqPrivateName[MQ_NAME_LEN] = '\0';
     do{
-        mqPrivateKey = ftok(homePath, rand());
-        mqPrivateID = msgget(mqPrivateKey, IPC_CREAT | IPC_EXCL | S_IRWXU);
-    }while(mqPrivateID == -1);
+        for(size_t i = 1; i < MQ_NAME_LEN; ++i)
+            mqPrivateName[i] = (char)('a' + rand() % ('z'- 'a'));
+    }while((mqPrivateID = mq_open(mqPrivateName, O_RDONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR, &attr)) == -1);
 }
 
 int connectToServer(){
-    char* homePath = getenv("HOME");
-    mqServerKey = ftok(homePath, PROJ_ID);
-    mqServerID = msgget(mqServerKey, 0);
+    mqServerID = mq_open(SERVER_MQ_NAME, O_WRONLY);
 
-    struct clientkey_msg keyMsg = {.mtype = INIT, .clientKey = mqPrivateKey};
-    msgsnd(mqServerID, &keyMsg, MAX_MSG, 0);
+    char initMsg[MAX_MSG];
+    initMsg[0] = INIT;
+    for(int i = 0; i < MQ_NAME_LEN + 1; ++i)
+        initMsg[i + 1] = mqPrivateName[i]; 
+    mq_send(mqServerID, initMsg, MAX_MSG, 0);
 
-    struct ping_msg response;
-    msgrcv(mqPrivateID, &response, MAX_MSG, ID_RESPONSE, 0);
-    clientID = ((struct clientid_msg*)&response)->clientID;
+    char response[MAX_MSG];
+    do{
+        mq_receive(mqPrivateID, response, MAX_MSG, NULL);
+    }while(response[0] != ID_RESPONSE);
+    clientID = (int)response[1];
     if(clientID != MAX_CLIENTS)
         return 0;
     else
@@ -116,9 +124,11 @@ int connectToServer(){
 }
 
 void stop(){
-    struct clientid_msg stopMsg = {.mtype = STOP, .clientID = clientID};
-    msgsnd(mqServerID, &stopMsg, sizeof(int), 0);
-    msgctl(mqPrivateID, IPC_RMID, NULL);
+    // struct clientid_msg stopMsg = {.mtype = STOP, .clientID = clientID};
+    char stopMsg[MAX_MSG] = {STOP, clientID};
+    mq_send(mqServerID, stopMsg, MAX_MSG, 0);
+    mq_close(mqPrivateID);
+    mq_unlink(mqPrivateName);
     exit(0);
 }
 
@@ -127,18 +137,22 @@ void stop(){
 // REQUESTS POSSIBLE BY SPECYFING COMMANDS
 
 void requestConnect(int connectClientID){
-    struct connect_request_msg request = {.mtype = CONNECT, .requestClientID = clientID, .connectClientID = connectClientID};
-    msgsnd(mqServerID, &request, 2*sizeof(int), 0);
-    struct connect_msg answer;
-    msgrcv(mqPrivateID, &answer, 2*sizeof(int), CONNECT_RESPONSE, 0);
-    connectResponseHandler(&answer);
+    char request[MAX_MSG] = {CONNECT, clientID, connectClientID};
+    mq_send(mqServerID, request, MAX_MSG, 0);
+    char answer[MAX_MSG];
+    do{
+        mq_receive(mqPrivateID, answer, MAX_MSG, NULL);
+    }while(answer[0] != CONNECT_RESPONSE);
+    connectResponseHandler(&answer[1]);
 }
 
 void requestDisconnect(){
-    struct connect_request_msg msg = {.mtype = DISCONNECT, .connectClientID = clientID, .requestClientID = privateChatID};
-    msgsnd(mqServerID, &msg, 2*sizeof(int), 0);
-    struct clientid_msg answer;
-    msgrcv(mqPrivateID, &answer, sizeof(int), DISCONNECT_RESPONSE, 0);
+    char request[MAX_MSG] = {DISCONNECT, clientID, privateChatID};
+    mq_send(mqServerID, request, MAX_MSG, 0);
+    char answer[MAX_MSG];
+    do{
+        mq_receive(mqPrivateID, answer, MAX_MSG, NULL);
+    }while(answer[0] != DISCONNECT_RESPONSE);
     disconnectResponseHandler();
 }
 
@@ -148,22 +162,24 @@ void sendMessage(char* message){
     }
     else{
         printf("[--Me--]:\t%s\n===\n", message);
-        struct ping_msg msg;
-        msg.mtype = MESSAGE;
-        strcpy(msg.rest, message);
-        msgsnd(mqPrivateChatID, &msg, MAX_MSG, 0);
+        char msg[MAX_MSG];
+        msg[0] = MESSAGE;
+        strcpy(&msg[1], message);
+        mq_send(mqPrivateChatID, msg, MAX_MSG, 0);
     }
 }
 
 void list(){
-    struct clientid_msg idMsg = {.mtype = LIST, .clientID = clientID};
-    msgsnd(mqServerID, &idMsg, sizeof(int), 0);
+    char idMsg[MAX_MSG] = {LIST, clientID};
+    mq_send(mqServerID, idMsg, MAX_MSG, 0);
 
-    struct list_cell cellRecieved;
-    msgrcv(mqPrivateID, &cellRecieved, sizeof(int) + sizeof(client_state), LIST_CLIENT, 0);
-    while(cellRecieved.clientID != -1){
-        printf("ClientID: %d\t State: %s\n", cellRecieved.clientID, stateName(cellRecieved.clientState));
-        msgrcv(mqPrivateID, &cellRecieved, sizeof(int) + sizeof(client_state), LIST_CLIENT, 0);
+    char cellReceived[MAX_MSG];
+    mq_setattr(mqPrivateID, &attr, NULL);
+    mq_receive(mqPrivateID, cellReceived, MAX_MSG, NULL);
+    while(cellReceived[1] != -1){
+        if(cellReceived[0] == LIST_CLIENT)
+            printf("ClientID: %d\t State: %s\n", cellReceived[1], stateName(cellReceived[2]));
+        mq_receive(mqPrivateID, cellReceived, MAX_MSG, NULL);
     }
     puts("------------------");
 }
@@ -172,14 +188,16 @@ void list(){
 
 // HANDLING INCOMING CONNECT REQUESTS
 
-void connectResponseHandler(struct connect_msg* connect){
-    if(connect->connectClientID != -1){
-        privateChatID = connect->connectClientID;
-        mqPrivateChatID = msgget(connect->connectClientKey, 0);
-        printf("Connected to client %d\n", privateChatID);
+void connectResponseHandler(char* connect){
+    if(connect[0] != -1){
+        privateChatID = connect[0];
+        mqPrivateChatID = mq_open(&connect[1], O_WRONLY);
+    }
+    if(connect[0] == -1 || mqPrivateChatID == -1){
+        puts("Connecting failed");
     }
     else{
-        puts("Connecting failed");
+        printf("Connected to client %d\n", privateChatID);
     }
 }
 
@@ -191,17 +209,17 @@ void disconnectResponseHandler(){
 
 //////////////////////////////////////
 // HANDLING INCOMING MESSAGES IN QUEUE
-void handleMessage(struct ping_msg msg){
-    switch (msg.mtype)
+void handleMessage(char* msg){
+    switch (msg[0])
     {
     case SERVER_STOP:
         raise(SIGINT);
         break;
     case MESSAGE:
-        printf("[--%d--]:\t%s\n===\n", privateChatID, msg.rest);
+        printf("[--%d--]:\t%s\n===\n", privateChatID, &msg[1]);
         break;
     case CONNECT_RESPONSE:
-        connectResponseHandler((struct connect_msg*)&msg);
+        connectResponseHandler(&msg[1]);
         break;
     case DISCONNECT_RESPONSE:
         disconnectResponseHandler();

@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 
+#define SERVER_MQ_NAME "/servqueue"
+
 #define STOP 1
 #define DISCONNECT 2
 #define LIST 3
@@ -10,57 +12,25 @@
 #define MESSAGE 6
 #define MAX_CLIENT_MTYPE (MESSAGE+1)
 
-#define SERVER_STOP 101
+#define SERVER_STOP 11
 
-#define ID_RESPONSE 201
+#define ID_RESPONSE 21
 
-#define LIST_CLIENT 301
+#define LIST_CLIENT 31
 
-#define CONNECT_RESPONSE 401
-#define DISCONNECT_RESPONSE 402
+#define CONNECT_RESPONSE 41
+#define DISCONNECT_RESPONSE 42
 #define MAX_SERVER_MTYPE DISCONNECT_RESPONSE+1
 
 #define MAX_CLIENTS 64
 #define MAX_MSG 1024
+#define MAX_MSGS_IN 10
 
-#define PROJ_ID 71831
+#define MQ_NAME_LEN 14
 
 typedef enum client_state{
     NEXIST, ACTIVE, PRIVATE_CONNECT
 } client_state;
-
-struct clientid_msg {
-    long mtype;
-    int clientID;
-};
-
-struct ping_msg {
-    long mtype;
-    char rest[MAX_MSG];
-};
-
-struct clientkey_msg {
-    long mtype;
-    key_t clientKey;
-};
-
-struct list_cell{
-    long mtype;
-    int clientID;
-    client_state clientState;
-};
-
-struct connect_request_msg{
-    long mtype;
-    int requestClientID;
-    int connectClientID;
-};
-
-struct connect_msg{
-    long mtype;
-    int connectClientID;
-    key_t connectClientKey;
-};
 
 const char* stateName(client_state state){
     switch(state){
