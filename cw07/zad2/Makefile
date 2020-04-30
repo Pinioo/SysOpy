@@ -1,10 +1,10 @@
 CC = gcc -Wall
 
 all: main.o receiver.o sender.o packer.o
-	$(CC) main.o -o main
-	$(CC) sender.o -o sender
-	$(CC) receiver.o -o receiver
-	$(CC) packer.o -o packer
+	$(CC) main.o -o main -pthread -lrt
+	$(CC) sender.o -o sender -pthread -lrt
+	$(CC) receiver.o -o receiver -pthread -lrt
+	$(CC) packer.o -o packer -pthread -lrt
 
 test: all
 	./main
