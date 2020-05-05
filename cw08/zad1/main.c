@@ -77,8 +77,15 @@ void* interThread(void* threadNumVoid){
 }
 
 int main(int argc, char** argv){
-    pgmImg = loadPgm("coins.ascii.pgm");
+    if(argc < 4){
+        puts("Too few arguments");
+        exit(-1);
+    }
+    char* partitionMode = argv[1];
     numOfThreads = atoi(argv[2]);
+    char* pgmFilename = argv[3];
+
+    pgmImg = loadPgm(pgmFilename);
     finalResults = (long*)calloc(maxGray, sizeof(long));
     threadIds = (pthread_t*)malloc(numOfThreads*sizeof(pthread_t));
     microsecTimes = (long*)malloc(numOfThreads*sizeof(long));
@@ -88,17 +95,21 @@ int main(int argc, char** argv){
 
     void* func;
     bool createThreadResultsArray;
-    if(strcmp(argv[1], "sign") == 0){
+    if(strcmp(partitionMode, "sign") == 0){
         createThreadResultsArray = false;
         func = signThread;
     }
-    else if(strcmp(argv[1], "block") == 0){
+    else if(strcmp(partitionMode, "block") == 0){
         createThreadResultsArray = true;
         func = blockThread;
     }
-    else if(strcmp(argv[1], "interleaved") == 0){
+    else if(strcmp(partitionMode, "interleaved") == 0){
         createThreadResultsArray = true;
         func = interThread;
+    }
+    else {
+        puts("Given partitioning mode is invalid");
+        exit(-1);
     }
 
     if(createThreadResultsArray){
@@ -138,8 +149,8 @@ int main(int argc, char** argv){
 
     printf("PROGRAM EXECUTION TIME: %ldms\n", fullMicrosTime);
     
-    char name[30];
-    sprintf(name, "hist_%s_%d.txt", argv[1], numOfThreads);
+    char name[50];
+    sprintf(name, "hist_%s_%s_%d.txt", pgmFilename, partitionMode, numOfThreads);
     saveHistogramToFile(finalResults, maxGray, name);
 
     for(int i = 0; i < pgmImg.height; ++i)
