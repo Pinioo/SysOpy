@@ -1,5 +1,7 @@
 #include "utils.h"
 
+pthread_mutex_t mute = PTHREAD_MUTEX_INITIALIZER;
+
 int unixSocketCreated = 0;
 int inetSocketCreated = 0;
 
@@ -20,11 +22,12 @@ int inetSocketFd;
 
 void* pinger(){
     while(1){
+        pthread_mutex_lock(&mute);
+        printInfo("Pinging");
         for(int i = 0; i < MAX_CLIENTS; i++){
             char msg[MAX_MSG];
             msg[0] = msg_ping;
             if(clientSocketFd[i] != -1){
-                printInfo("ping");
                 if(!ponged[i] || send(clientSocketFd[i], msg, MAX_MSG, 0) == -1){
                     close(clientSocketFd[i]);
                     if(opponents[i]){
@@ -42,6 +45,7 @@ void* pinger(){
                 ponged[i] = 0;
             }
         }
+        pthread_mutex_unlock(&mute);
         sleep(6);
     }
     return NULL;
@@ -150,6 +154,7 @@ int main(int argc, char** argv){
 
     while(1){
         int event_count = epoll_wait(epollFd, events, 5, -1);
+        pthread_mutex_lock(&mute);
         for(int i = 0; i < event_count; i++){
             if(events[i].data.fd == unixSocketFd || events[i].data.fd == inetSocketFd){
                 int id = findNextFdPlace();
@@ -216,6 +221,7 @@ int main(int argc, char** argv){
                 }
             }
         }
+        pthread_mutex_unlock(&mute);
     }
     return 0;
 }

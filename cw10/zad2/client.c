@@ -10,6 +10,7 @@ char oppSign;
 void exitActions(){
     shutdown(socketFd, SHUT_RDWR);
     close(socketFd);
+    unlink(myName);
 }
 
 void exiter(){
@@ -33,6 +34,10 @@ int main(int argc, char** argv){
         strcpy(add.sun_path, address);
 
         socketFd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        struct sockaddr_un c_add = {.sun_family = AF_UNIX};
+        strcpy(c_add.sun_path, myName);
+
+        bind(socketFd, (struct sockaddr*)&c_add, sizeof(c_add));
         connect(socketFd, (struct sockaddr*)&add, sizeof(add));
     }
     else if(strcmp("INET", mode) == 0){
@@ -60,7 +65,6 @@ int main(int argc, char** argv){
         exit(-1);
     else
         printInfo("Logged");
-
 
     while(msg[0] != msg_start){
         recv(socketFd, msg, MAX_MSG, MSG_WAITALL);
@@ -110,7 +114,12 @@ int main(int argc, char** argv){
             }
             else{
                 recv(socketFd, msg, MAX_MSG, MSG_WAITALL);
-                send(socketFd, msg, MAX_MSG, 0);
+                if(msg[0] == msg_ping)
+                    send(socketFd, msg, MAX_MSG, 0);
+                else if(msg[0] == msg_disconnected){
+                    printError("Server error");
+                    exit(-1);
+                }
             }
         }
         else{
@@ -127,7 +136,10 @@ int main(int argc, char** argv){
             }
             else if(msg[0] == msg_ping){
                 send(socketFd, msg, MAX_MSG, 0);
-                printInfo("Ponged");
+            }
+            else if(msg[0] == msg_disconnected){
+                printError("Server error");
+                exit(-1);
             }
         }
     }
