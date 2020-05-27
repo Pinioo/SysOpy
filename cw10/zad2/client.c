@@ -32,7 +32,7 @@ int main(int argc, char** argv){
         struct sockaddr_un add = {.sun_family = AF_UNIX};
         strcpy(add.sun_path, address);
 
-        socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
+        socketFd = socket(AF_UNIX, SOCK_DGRAM, 0);
         connect(socketFd, (struct sockaddr*)&add, sizeof(add));
     }
     else if(strcmp("INET", mode) == 0){
@@ -45,7 +45,7 @@ int main(int argc, char** argv){
         part = strtok(NULL, ":");
         add.sin_port = htons(atoi(part)); 
         
-        socketFd = socket(AF_INET, SOCK_STREAM, 0);
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0);
         connect(socketFd, (struct sockaddr*)&add, sizeof(add));
     }
     

@@ -5,12 +5,16 @@ int inetSocketCreated = 0;
 
 int epollFd;
 int waitingClient = -1;
-int clientSocketFd[MAX_CLIENTS];
+int slotStatus[MAX_CLIENTS];
+struct sockaddr_in clientInet[MAX_CLIENTS];
+struct sockaddr_un clientUnix[MAX_CLIENTS];
 int opponents[MAX_CLIENTS];
 int ponged[MAX_CLIENTS];
 char clientName[MAX_CLIENTS][MAX_NAME];
 
-u_int16_t tcpSocketPort;
+pthread_mutex_t mute = PTHREAD_MUTEX_INITIALIZER;
+
+u_int16_t udpSocketPort;
 char info[128];
 char* unixSocketName;
 struct epoll_event events[5];
@@ -18,45 +22,62 @@ struct epoll_event events[5];
 int unixSocketFd;
 int inetSocketFd;
 
+int sendMsg(int id, char* msg, size_t msgSize){
+    if(slotStatus[id] == UNIX)
+        return sendto(unixSocketFd, msg, MAX_MSG, 0, (struct sockaddr*)&clientUnix[id], sizeof(struct sockaddr_un));
+    if(slotStatus[id] == INET)
+        return sendto(inetSocketFd, msg, MAX_MSG, 0, (struct sockaddr*)&clientInet[id], sizeof(struct sockaddr_in));
+    return -1;
+}
+
 void* pinger(){
     while(1){
+        pthread_mutex_lock(&mute);
         for(int i = 0; i < MAX_CLIENTS; i++){
             char msg[MAX_MSG];
             msg[0] = msg_ping;
-            if(clientSocketFd[i] != -1){
+            if(slotStatus[i] != emptySign){
                 printInfo("ping");
-                if(!ponged[i] || send(clientSocketFd[i], msg, MAX_MSG, 0) == -1){
-                    close(clientSocketFd[i]);
+                if(!ponged[i] || sendMsg(i, msg, MAX_MSG) == -1){
                     if(opponents[i]){
                         msg[0] = msg_disconnected;
-                        send(clientSocketFd[opponents[i]], msg, MAX_MSG, 0);
-                        close(clientSocketFd[opponents[i]]);
+                        sendMsg(opponents[i], msg, MAX_MSG);
                         clientName[opponents[i]][0] = '\0';
-                        clientSocketFd[opponents[i]] = -1;
+                        slotStatus[opponents[i]] = EMPTY;
                         opponents[opponents[i]] = -1;
                     }
                     clientName[i][0] = '\0';
                     opponents[i] = -1;
-                    clientSocketFd[i] = -1;
+                    slotStatus[i] = EMPTY;
                 }
                 ponged[i] = 0;
             }
         }
+        pthread_mutex_unlock(&mute);
         sleep(6);
     }
     return NULL;
 }
 
-int findFdIndex(int fd){
-    for(int i = 0; i < MAX_CLIENTS; i++)
-        if(clientSocketFd[i] == fd)
+int findInIndex(struct sockaddr_in add){
+    for(int i = 0; i < MAX_CLIENTS; ++i){
+        if(slotStatus[i] == INET && add.sin_port == clientInet[i].sin_port)
             return i;
+    }
+    return -1;
+}
+
+int findUnIndex(struct sockaddr_un add){
+    for(int i = 0; i < MAX_CLIENTS; ++i){
+        if(slotStatus[i] == UNIX && add.sin_port == clientInet[i].sin_port)
+            return i;
+    }
     return -1;
 }
 
 int findNextFdPlace(){
     for(int i = 0; i < MAX_CLIENTS; i++)
-        if(clientSocketFd[i] == -1)
+        if(slotStatus[i] == EMPTY)
             return i;
     return -1;
 }
@@ -71,6 +92,8 @@ int isNameUnique(char* name){
 void exitActions(){
     if(unixSocketCreated){
         unlink(unixSocketName);
+        shutdown(unixSocketFd, SHUT_RDWR);
+        shutdown(inetSocketFd, SHUT_RDWR);
     }
 }
 
@@ -89,7 +112,7 @@ int main(int argc, char** argv){
     printInfo("Server starting");
 
     for(int i = 0; i < MAX_CLIENTS; i++){
-        clientSocketFd[i] = -1;
+        slotStatus[i] = EMPTY;
         opponents[i] = -1;
         clientName[i][0] = '\0';
         ponged[i] = 1;
@@ -98,11 +121,11 @@ int main(int argc, char** argv){
     epollFd = epoll_create1(0);
     struct epoll_event ev = {.events = EPOLLIN};
 
-    tcpSocketPort = atoi(argv[1]);
+    udpSocketPort = atoi(argv[1]);
     unixSocketName = argv[2];
 
-    unixSocketFd = socket(AF_UNIX, SOCK_STREAM, 0);
-    inetSocketFd = socket(AF_INET, SOCK_STREAM, 0);
+    unixSocketFd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    inetSocketFd = socket(AF_INET, SOCK_DGRAM, 0);
 
     if(unixSocketFd == -1 || inetSocketFd == -1){
         printError("Socket cannot be created");
@@ -118,11 +141,11 @@ int main(int argc, char** argv){
     else
         unixSocketCreated = 1;
 
-    struct sockaddr_in inetAddr = {.sin_family = AF_INET, .sin_port = htobe16(tcpSocketPort)};
+    struct sockaddr_in inetAddr = {.sin_family = AF_INET, .sin_port = htobe16(udpSocketPort)};
     inetAddr.sin_addr.s_addr = INADDR_ANY;
 
     if(bind(inetSocketFd, (struct sockaddr*)&inetAddr, sizeof(struct sockaddr_in)) == -1){
-        printError("TCP socket address is unavailable");
+        printError("UDP socket address is unavailable");
         exit(-1);
     }
     else
@@ -131,7 +154,7 @@ int main(int argc, char** argv){
     sprintf(info, "UNIX socket available at %s", unixSocketName);
     printInfo(info);
 
-    sprintf(info, "Server running at 127.0.0.1:%d", tcpSocketPort);
+    sprintf(info, "Server running at 127.0.0.1:%d", udpSocketPort);
     printInfo(info);
 
     char* msg = (char*)malloc(MAX_MSG*sizeof(char));
@@ -150,59 +173,52 @@ int main(int argc, char** argv){
 
     while(1){
         int event_count = epoll_wait(epollFd, events, 5, -1);
+        pthread_mutex_lock(&mute);
         for(int i = 0; i < event_count; i++){
-            if(events[i].data.fd == unixSocketFd || events[i].data.fd == inetSocketFd){
+            if(events[i].data.fd == unixSocketFd){
                 int id = findNextFdPlace();
-                clientSocketFd[id] = accept(events[i].data.fd, NULL, NULL);
+                if(events[i].data.fd == unixSocketFd){}
 
-                if(clientSocketFd[id] == -1){
-                    printError("Accept problem");
-                    break;
-                }
-                else {
-                    recv(clientSocketFd[id], msg, MAX_MSG, MSG_WAITALL);
-                    if(msg[0] == msg_name){
-                        if(isNameUnique(&msg[1])){
-                            strcpy(clientName[id], &msg[1]);
-                            msg[0] = msg_logged;
-                            send(clientSocketFd[id], msg, MAX_MSG, 0);
-                            if(waitingClient == -1)
-                                waitingClient = id;
-                            else{
-                                msg[0] = msg_start;
-                                opponents[id] = waitingClient;
-                                opponents[waitingClient] = id;
-
-                                waitingClient = -1;
-                                msg[1] = oSign;
-                                send(clientSocketFd[id], msg, MAX_MSG, 0);
-
-                                msg[1] = xSign;
-                                send(clientSocketFd[opponents[id]], msg, MAX_MSG, 0);
-                            }
-
-                            ev.data.fd = clientSocketFd[id];
-                            epoll_ctl(epollFd, EPOLL_CTL_ADD, clientSocketFd[id], &ev);
-                            printInfo("New client connected");
-                        }
+                recv(clientSocketFd[id], msg, MAX_MSG, MSG_WAITALL);
+                if(msg[0] == msg_name){
+                    if(isNameUnique(&msg[1])){
+                        strcpy(clientName[id], &msg[1]);
+                        msg[0] = msg_logged;
+                        send(clientSocketFd[id], msg, MAX_MSG, 0);
+                        if(waitingClient == -1)
+                            waitingClient = id;
                         else{
-                            msg[0] = msg_disconnected;
+                            msg[0] = msg_start;
+                            opponents[id] = waitingClient;
+                            opponents[waitingClient] = id;
+
+                            waitingClient = -1;
+                            msg[1] = oSign;
                             send(clientSocketFd[id], msg, MAX_MSG, 0);
-                            close(clientSocketFd[id]);
-                            clientSocketFd[id] = -1;
+
+                            msg[1] = xSign;
+                            send(clientSocketFd[opponents[id]], msg, MAX_MSG, 0);
                         }
+
+                        ev.data.fd = clientSocketFd[id];
+                        epoll_ctl(epollFd, EPOLL_CTL_ADD, clientSocketFd[id], &ev);
+                        printInfo("New client connected");
+                    }
+                    else{
+                        msg[0] = msg_disconnected;
+                        send(clientSocketFd[id], msg, MAX_MSG, 0);
+                        close(clientSocketFd[id]);
+                        clientSocketFd[id] = -1;
                     }
                 }
             }
-            else {
+            else if(events[i].data.fd == inetSocketFd){
                 int id = findFdIndex(events[i].data.fd);
                 recv(clientSocketFd[id], msg, MAX_MSG, MSG_WAITALL);
                 if(msg[0] == msg_disconnected){
-                    epoll_ctl(epollFd, EPOLL_CTL_DEL, clientSocketFd[id], &ev);
-                    close(events[i].data.fd);
                     opponents[id] = -1;
                     clientName[id][0] = -1;
-                    clientSocketFd[id] = -1;
+                    slotStatus[id] = EMPTY;
                     ponged[i] = 1;
                     printInfo("Client disconnected");
                 }
@@ -216,6 +232,7 @@ int main(int argc, char** argv){
                 }
             }
         }
+        pthread_mutex_unlock(&mute);
     }
     return 0;
 }

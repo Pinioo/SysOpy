@@ -17,6 +17,11 @@
 #define MAX_NAME 32
 #define MAX_MSG 33
 
+
+const int EMPTY = -1;
+const int INET = 0;
+const int UNIX = 1;
+
 const char emptySign = ' ';
 const char xSign = 'X';
 const char oSign = 'O';
